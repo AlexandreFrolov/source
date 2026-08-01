@@ -82,7 +82,9 @@ bool configureE22() {
   configuration.SPED.airDataRate      = AIR_DATA_RATE_010_24;
   configuration.SPED.uartParity       = MODE_00_8N1;
 
-  configuration.OPTION.transmissionPower = POWER_22; // максимум для 22dBm-версии модуля
+  //configuration.OPTION.transmissionPower = POWER_22; // максимум для 22dBm-версии модуля
+  configuration.OPTION.transmissionPower = POWER_10;
+
   configuration.OPTION.RSSIAmbientNoise  = RSSI_AMBIENT_NOISE_ENABLED; // нужно для LBT
 
   configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION; // было ошибочно в OPTION
