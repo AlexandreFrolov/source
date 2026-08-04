@@ -82,11 +82,11 @@ bool configureE22() {
   configuration.SPED.airDataRate  = AIR_DATA_RATE_010_24;
   configuration.SPED.uartParity   = MODE_00_8N1;
 
-  configuration.OPTION.transmissionPower = POWER_22;
+//  configuration.OPTION.transmissionPower = POWER_22;
   configuration.OPTION.RSSIAmbientNoise  = RSSI_AMBIENT_NOISE_ENABLED;
 
   configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION; 
-  configuration.TRANSMISSION_MODE.enableLBT  = LBT_ENABLED;
+//  configuration.TRANSMISSION_MODE.enableLBT  = LBT_ENABLED;
   configuration.TRANSMISSION_MODE.enableRSSI = RSSI_ENABLED; // добавляет RSSI-байт к принятому пакету
 
   ResponseStatus rs = e22ttl.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
