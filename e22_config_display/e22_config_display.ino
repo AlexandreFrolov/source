@@ -7,6 +7,11 @@
   Библиотеки (Arduino IDE -> Library Manager):
     - "LoRa_E22" / EByte_LoRa_E22_Series_Library (автор xreef / renzo mischianti)
     - "GFX Library for Arduino" (moononournation / Arduino_GFX_Library)
+
+  ВАЖНО: встроенный в библиотеку LoRa_E22 метод cfg.getChannelDescription()
+  считает частоту от базы 410.125 МГц (это база 400-МГц серии модулей).
+  Для E22-900T22D база другая — 850.125 МГц, поэтому расчёт частоты по
+  каналу сделан вручную в getFreqDescription900().
 */
 
 #include <Arduino_GFX_Library.h>
@@ -36,6 +41,13 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, TFT_RST, 0 /* rotation */, true /* IP
 
 HardwareSerial LoRaSerial(1);
 LoRa_E22 e22(&LoRaSerial, LORA_AUX_PIN, LORA_M0_PIN, LORA_M1_PIN, UART_BPS_RATE_9600);
+
+// ---------------- Расчёт частоты по каналу для серии E22-900T22D ----------------
+// База 850.125 МГц, шаг 1 МГц/канал (диапазон модуля ~850-930 МГц).
+String getFreqDescription900(uint8_t chan) {
+  float freq = 850.125f + (float)chan;
+  return String(freq, 3) + "MHz";
+}
 
 // ---------------- Вывод текста построчно ----------------
 static int cursorY;
@@ -72,10 +84,8 @@ void showConfiguration(Configuration cfg) {
   uint16_t addr = ((uint16_t)cfg.ADDH << 8) | cfg.ADDL;
   printLine("Addr : " + String(addr));
   printLine("NetID: " + String(cfg.NETID, DEC));
-  printLine("Chan : " + String(cfg.CHAN, DEC) + " (" + cfg.getChannelDescription() + ")");
+  printLine("Chan : " + String(cfg.CHAN, DEC) + " (" + getFreqDescription900(cfg.CHAN) + ")");
 
-  // Поля ниже относятся к вложенным битовым структурам SPED / OPTION /
-  // TRANSMISSION_POWER — сверьте точные названия методов в LoRa_E22.h
   printLine("UART : " + cfg.SPED.getUARTBaudRateDescription());
   printLine("Air  : " + cfg.SPED.getAirDataRateDescription());
   printLine("Parity: " + cfg.SPED.getUARTParityDescription());
@@ -93,7 +103,7 @@ void printParametersSerial(struct Configuration cfg) {
   Serial.print(F("AddL : ")); Serial.println(cfg.ADDL, HEX);
   Serial.print(F("NetID: ")); Serial.println(cfg.NETID, HEX);
   Serial.print(F("Chan : ")); Serial.print(cfg.CHAN, DEC);
-  Serial.print(F(" -> ")); Serial.println(cfg.getChannelDescription());
+  Serial.print(F(" -> ")); Serial.println(getFreqDescription900(cfg.CHAN));
 
   Serial.print(F("Parity   : ")); Serial.println(cfg.SPED.getUARTParityDescription());
   Serial.print(F("UART baud: ")); Serial.println(cfg.SPED.getUARTBaudRateDescription());
