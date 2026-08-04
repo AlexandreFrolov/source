@@ -2,19 +2,14 @@
  * Приёмник текстовой строки на 868.9 МГц (канал 19 -> 869.125 МГц, поддиапазон ГКРЧ 868.7-869.2)
  *
  * Дисплей: ST7789 172x320, драйвер Arduino_GFX
- * Радио: Ebyte E22 в режиме фиксированной передачи + RSSI байт (см. sender-скетч)
- *
- * !!! ПЕРЕД ПРОШИВКОЙ ПРОВЕРЬТЕ:
- *  - пины E22_* ниже свободны на вашем экземпляре платы (сверьтесь с шелкографией/схемой)
- *  - версию библиотеки EByte_LoRa_E22 - имена полей структуры Configuration могут отличаться
- *  - MY_ADDH/MY_ADDL здесь должны совпадать с DEST_ADDH/DEST_ADDL в sender-скетче
+ * Радио: Ebyte E22 в режиме фиксированной передачи + RSSI байт
  */
 
 #include <Arduino_GFX_Library.h>
 #include "LoRa_E22.h"
 
 
-// ---------- Дисплей ST7789 (подтверждённая рабочая распиновка платы) ----------
+// ---------- Дисплей ST7789
 #define TFT_DC   41
 #define TFT_CS   42
 #define TFT_SCK  40
@@ -30,7 +25,7 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, TFT_RST, 0 /* rotation */, true /* IP
 
 // ---------- Ebyte E22: UART + управляющие пины (свободные GPIO, не занятые LCD/SD/PSRAM) ----------
 #define E22_UART      Serial1
-#define E22_RXD_PIN   8   // ESP32 RX <- E22 TX   (подтверждено рабочим config-скетчем)
+#define E22_RXD_PIN   8   // ESP32 RX <- E22 TX
 #define E22_TXD_PIN   9   // ESP32 TX -> E22 RX
 #define E22_AUX_PIN   4
 #define E22_M0_PIN    5
