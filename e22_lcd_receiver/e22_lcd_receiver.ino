@@ -8,7 +8,6 @@
 #include <Arduino_GFX_Library.h>
 #include "LoRa_E22.h"
 
-
 // ---------- Дисплей ST7789
 #define TFT_DC   41
 #define TFT_CS   42
@@ -33,7 +32,7 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, TFT_RST, 0 /* rotation */, true /* IP
 
 LoRa_E22 e22ttl(&E22_UART, E22_AUX_PIN, E22_M0_PIN, E22_M1_PIN, UART_BPS_RATE_9600);
 
-// ---------- Параметры радиоканала (должны совпадать с sender'ом) ----------
+// ---------- Параметры радиоканала (должны совпадать с параметрами передатчика) ----------
 #define MY_ADDH      0x00
 #define MY_ADDL      0x02  // = DEST_ADDH/DEST_ADDL в sender-скетче
 #define LORA_CHANNEL 19    // 850.125 + 19*1 = 869.125 МГц
@@ -69,8 +68,6 @@ void drawWaiting() {
 bool configureE22() {
   ResponseStructContainer c = e22ttl.getConfiguration();
   if (c.status.code != 1) {
-    // ВАЖНО: c.data при неудаче getConfiguration() не инициализирован (не nullptr),
-    // вызов c.close() здесь пытается free() мусорный указатель -> assert/бутлуп.
     Serial.print("getConfiguration failed: ");
     Serial.println(c.status.getResponseDescription());
     return false;
@@ -88,7 +85,7 @@ bool configureE22() {
   configuration.OPTION.transmissionPower = POWER_22;
   configuration.OPTION.RSSIAmbientNoise  = RSSI_AMBIENT_NOISE_ENABLED;
 
-  configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION; // было ошибочно в OPTION
+  configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION; 
   configuration.TRANSMISSION_MODE.enableLBT  = LBT_ENABLED;
   configuration.TRANSMISSION_MODE.enableRSSI = RSSI_ENABLED; // добавляет RSSI-байт к принятому пакету
 
@@ -124,7 +121,7 @@ void setup() {
 
 void loop() {
   if (e22ttl.available() > 1) {
-    // RssiContainer уже разбирает payload + RSSI байт (dBm = raw - 256), см. ваш Python-стек
+    // RssiContainer уже разбирает payload + RSSI байт (dBm = raw - 256)
     ResponseContainer rc = e22ttl.receiveMessageRSSI();
 
     if (rc.status.code == 1) {
