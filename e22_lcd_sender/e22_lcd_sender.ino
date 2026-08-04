@@ -4,19 +4,12 @@
  * Дисплей: ST7789 172x320, драйвер Arduino_GFX
  * Радио: Ebyte E22 в режиме фиксированной передачи (адресация ADDH/ADDL/CHAN),
  *        связь по UART через библиотеку EByte_LoRa_E22 (xreef/EByte_LoRa_E22_series_library)
- *
- * !!! ПЕРЕД ПРОШИВКОЙ ПРОВЕРЬТЕ:
- *  - пины E22_* ниже свободны на вашем экземпляре платы (сверьтесь с шелкографией/схемой)
- *  - версию библиотеки EByte_LoRa_E22 - имена полей структуры Configuration могут отличаться
- *    между версиями, свериться с примером, который ставился вместе с библиотекой
- *  - канал/частоту относительно актуального даташита вашей партии E22-900T22D
  */
 
 #include <Arduino_GFX_Library.h>
 #include "LoRa_E22.h"
 
-
-// ---------- Дисплей ST7789 (подтверждённая рабочая распиновка платы) ----------
+// ---------- Дисплей ST7789
 #define TFT_DC   41
 #define TFT_CS   42
 #define TFT_SCK  40
@@ -32,7 +25,7 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, TFT_RST, 0 /* rotation */, true /* IP
 
 // ---------- Ebyte E22: UART + управляющие пины (свободные GPIO, не занятые LCD/SD/PSRAM) ----------
 #define E22_UART      Serial1
-#define E22_RXD_PIN   8   // ESP32 RX <- E22 TX   (подтверждено рабочим config-скетчем)
+#define E22_RXD_PIN   8   // ESP32 RX <- E22 TX
 #define E22_TXD_PIN   9   // ESP32 TX -> E22 RX
 #define E22_AUX_PIN   4
 #define E22_M0_PIN    5
@@ -45,7 +38,7 @@ LoRa_E22 e22ttl(&E22_UART, E22_AUX_PIN, E22_M0_PIN, E22_M1_PIN, UART_BPS_RATE_96
 #define MY_ADDL      0x01
 #define DEST_ADDH    0x00
 #define DEST_ADDL    0x02
-#define LORA_CHANNEL 19   // 850.125 + 19*1 = 869.125 МГц (проверить по даташиту вашей партии модуля)
+#define LORA_CHANNEL 19   // 850.125 + 19*1 = 869.125 МГц
 
 uint32_t txCount = 0;
 char txbuf[64];
@@ -66,8 +59,6 @@ void drawStatus(const char *line1, const char *line2, const char *line3) {
 bool configureE22() {
   ResponseStructContainer c = e22ttl.getConfiguration();
   if (c.status.code != 1) {
-    // ВАЖНО: c.data при неудаче getConfiguration() не инициализирован (не nullptr),
-    // вызов c.close() здесь пытается free() мусорный указатель -> assert/бутлуп.
     Serial.print("getConfiguration failed: ");
     Serial.println(c.status.getResponseDescription());
     return false;
@@ -87,7 +78,7 @@ bool configureE22() {
 
   configuration.OPTION.RSSIAmbientNoise  = RSSI_AMBIENT_NOISE_ENABLED; // нужно для LBT
 
-  configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION; // было ошибочно в OPTION
+  configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION; 
   configuration.TRANSMISSION_MODE.enableLBT = LBT_ENABLED;
   configuration.TRANSMISSION_MODE.enableRSSI = RSSI_ENABLED;
 
@@ -113,23 +104,16 @@ void setup() {
 }
 
 void loop() {
-  // Берём строку либо из Serial (USB), либо шлём тестовое сообщение раз в секунду
   static uint32_t lastSend = 0;
-  String payload;
 
-  if (Serial.available()) {
-    payload = Serial.readStringUntil('\n');
-    payload.trim();
-  } else if (millis() - lastSend > 5000) {
-    txCount++;
-    snprintf(txbuf, sizeof(txbuf), "Hello LoRa #%lu", (unsigned long)txCount);
-    payload = String(txbuf);
-    lastSend = millis();
-  } else {
+  if (millis() - lastSend < 5000) {
     return;
   }
+  lastSend = millis();
 
-  if (payload.length() == 0) return;
+  txCount++;
+  snprintf(txbuf, sizeof(txbuf), "Hello LoRa #%lu", (unsigned long)txCount);
+  String payload = String(txbuf);
 
   drawStatus("LoRa TX", ("TX: " + payload).c_str(), "Sending...");
 
