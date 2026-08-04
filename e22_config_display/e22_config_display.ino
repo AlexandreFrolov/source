@@ -7,24 +7,6 @@
   Библиотеки (Arduino IDE -> Library Manager):
     - "LoRa_E22" / EByte_LoRa_E22_Series_Library (автор xreef / renzo mischianti)
     - "GFX Library for Arduino" (moononournation / Arduino_GFX_Library)
-
-  ВАЖНО:
-  1. Точные имена полей структуры Configuration могут отличаться между
-     версиями библиотеки. Перед прошивкой откройте установленный файл
-     LoRa_E22.h и/или пример esp32_e22_getConfiguration.ino и сверьте
-     имена полей SPED / OPTION / TRANSMISSION_POWER — при необходимости
-     поправьте showConfiguration().
-  2. Пины ниже — GPIO ESP32-S3, СВОБОДНЫЕ от дисплея, IMU (QMI8658, I2C
-     GPIO6/7), слота microSD (GPIO14-18,21), RGB-светодиода (GPIO38) и
-     USB (UART0 = GPIO43/44, native USB = GPIO19/20). Перед распайкой
-     всё равно сверьтесь с шелкографией/схемой именно вашей ревизии
-     платы (суффикс "-M"), т.к. Waveshare иногда меняет нумерацию между
-     ревизиями.
-  3. E22-900T22D в пике (при +22 дБм) потребляет ток в районе 500-700 мА
-     короткими импульсами на передачу. Поставьте у самого модуля
-     керамический конденсатор 100 нФ + электролит 100-470 мкФ между
-     VCC и GND, иначе просадка 3V3 может ронять ESP32-S3 или сбивать
-     дисплей.
 */
 
 #include <Arduino_GFX_Library.h>
@@ -37,8 +19,7 @@
 #define TFT_SCK  40
 #define TFT_MOSI 45
 #define TFT_RST  39
-#define TFT_BL   46   // на части плат/ревизий — GPIO48, если подсветка не
-                       // включается, попробуйте 48 вместо 46
+#define TFT_BL   46 
 
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, GFX_NOT_DEFINED);
 Arduino_GFX *gfx = new Arduino_ST7789(bus, TFT_RST, 0 /* rotation */, true /* IPS */,
@@ -52,8 +33,6 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, TFT_RST, 0 /* rotation */, true /* IP
 #define LORA_AUX_PIN 4    // E22 AUX
 #define LORA_M0_PIN  5    // E22 M0
 #define LORA_M1_PIN  2    // E22 M1
-// GPIO 1,3,10,11,12,13 остаются свободны под дальнейшее расширение
-// (например, датчик BME280 на отдельном I2C, как в проекте на Heltec).
 
 HardwareSerial LoRaSerial(1);
 LoRa_E22 e22(&LoRaSerial, LORA_AUX_PIN, LORA_M0_PIN, LORA_M1_PIN, UART_BPS_RATE_9600);
@@ -61,11 +40,25 @@ LoRa_E22 e22(&LoRaSerial, LORA_AUX_PIN, LORA_M0_PIN, LORA_M1_PIN, UART_BPS_RATE_
 // ---------------- Вывод текста построчно ----------------
 static int cursorY;
 
+// Ширина области для текста в пикселях (экран 172 px минус отступы слева/справа)
+#define TEXT_AREA_WIDTH 164
+
 void printLine(const String &txt, uint16_t color = RGB565_WHITE) {
   gfx->setCursor(4, cursorY);
   gfx->setTextColor(color);
   gfx->print(txt);
-  cursorY += 16;
+
+  // Считаем реальную ширину строки в пикселях и сколько "физических" строк она займёт
+  int16_t x1, y1;
+  uint16_t w, h;
+  gfx->getTextBounds(txt, 0, 0, &x1, &y1, &w, &h);
+
+  int linesUsed = 1;
+  if (w > TEXT_AREA_WIDTH) {
+    linesUsed = (w + TEXT_AREA_WIDTH - 1) / TEXT_AREA_WIDTH; // округление вверх
+  }
+
+  cursorY += 16 * linesUsed;
 }
 
 void showConfiguration(Configuration cfg) {
@@ -89,6 +82,7 @@ void showConfiguration(Configuration cfg) {
   printLine("Power: " + cfg.OPTION.getTransmissionPowerDescription());
   printLine("SubPkt: " + cfg.OPTION.getSubPacketSetting());
   printLine("Fixed: " + cfg.TRANSMISSION_MODE.getFixedTransmissionDescription());
+  printLine(" ");
   printLine("LBT  : " + cfg.TRANSMISSION_MODE.getLBTEnableByteDescription());
   printLine("RSSI : " + cfg.TRANSMISSION_MODE.getRSSIEnableByteDescription());
 }
