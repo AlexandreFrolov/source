@@ -68,6 +68,7 @@ bool configureE22() {
   configuration.ADDH = MY_ADDH;
   configuration.ADDL = MY_ADDL;
   configuration.CHAN = LORA_CHANNEL;
+  configuration.NETID = 0x00;
 
   configuration.SPED.uartBaudRate     = UART_BPS_9600;
   configuration.SPED.airDataRate      = AIR_DATA_RATE_010_24;
