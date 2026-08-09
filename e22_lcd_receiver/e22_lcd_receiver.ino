@@ -37,6 +37,7 @@ LoRa_E22 e22ttl(&E22_UART, E22_AUX_PIN, E22_M0_PIN, E22_M1_PIN, UART_BPS_RATE_96
 #define MY_ADDL      0x02  // = DEST_ADDH/DEST_ADDL в sender-скетче
 #define LORA_CHANNEL 19    // 850.125 + 19*1 = 869.125 МГц
 
+
 uint32_t rxCount = 0;
 
 void drawReceived(const String &text, int rssiDbm, uint32_t count) {
@@ -77,6 +78,7 @@ bool configureE22() {
   configuration.ADDH = MY_ADDH;
   configuration.ADDL = MY_ADDL;
   configuration.CHAN = LORA_CHANNEL;
+  configuration.NETID = 0x00;
 
   configuration.SPED.uartBaudRate = UART_BPS_9600;
   configuration.SPED.airDataRate  = AIR_DATA_RATE_010_24;
