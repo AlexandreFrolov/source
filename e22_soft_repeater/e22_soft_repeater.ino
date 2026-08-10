@@ -1,24 +1,25 @@
 /*
- * Полностью рабочий программный ретранслятор LoRa (ESP32-S3 + E22)
- * Точно эмулирует аппаратный репитер E22 (Пересылка из NETID 0x02 в NETID 0x10)
+ * Стабильный программный ретранслятор с защитой от зацикливания и эха
  */
 
 #include "LoRa_E22.h"
 
-// ---------- Пины E22 (ESP32-S3) ----------
-#define LORA_RX_PIN  17   // ESP32 RX <- E22 TXD
-#define LORA_TX_PIN  18   // ESP32 TX -> E22 RXD
-#define LORA_AUX_PIN 16   // E22 AUX
-#define LORA_M0_PIN  5    // E22 M0
-#define LORA_M1_PIN  6    // E22 M1
+#define LORA_RX_PIN  17
+#define LORA_TX_PIN  18
+#define LORA_AUX_PIN 16
+#define LORA_M0_PIN  5
+#define LORA_M1_PIN  6
 
 HardwareSerial LoRaSerial(1);
 LoRa_E22 e22(&LoRaSerial, LORA_AUX_PIN, LORA_M0_PIN, LORA_M1_PIN, UART_BPS_RATE_9600);
 
-// ---------- Сетевые параметры ----------
-#define SRC_NETID    0x02   // Сеть передатчика (TX)
-#define DST_NETID    0x10   // Сеть приёмника (RX)
-#define LORA_CHANNEL 19     // Канал (869.125 МГц)
+#define SRC_NETID    0x02
+#define DST_NETID    0x10
+#define LORA_CHANNEL 19
+
+// Переменные для фильтрации дубликатов
+String lastPayload = "";
+unsigned long lastTxTime = 0;
 
 bool configureSoftRepeater();
 void setNetIDFast(uint8_t netId);
@@ -29,96 +30,98 @@ void setup() {
   delay(1000);
 
   Serial.println(F("\n=============================================="));
-  Serial.println(F("  ESP32-S3 LoRa Software Repeater (Working)  "));
+  Serial.println(F("  ESP32-S3 LoRa Repeater (Anti-Echo Fixed)   "));
   Serial.println(F("=============================================="));
 
   LoRaSerial.begin(9600, SERIAL_8N1, LORA_RX_PIN, LORA_TX_PIN);
   e22.begin();
 
   if (configureSoftRepeater()) {
-    Serial.println(F("[SYSTEM] Ретранслятор готов! Прослушивание эфира (NETID 0x02)..."));
+    Serial.println(F("[SYSTEM] Слушаю эфир... Защита от эха активна."));
   } else {
-    Serial.println(F("[SYSTEM ERROR] Ошибка инициализации E22!"));
+    Serial.println(F("[SYSTEM ERROR] Ошибка связи с E22!"));
   }
 }
 
 void loop() {
   if (e22.available() > 0) {
-    // Читаем сообщение
     ResponseContainer rc = e22.receiveMessageRSSI();
 
     if (rc.status.code == 1) {
       String payload = rc.data;
       int rssi = (int)rc.rssi - 256;
 
-      // Игнорируем эхо-ответы E22, если они попадут в буфер
+      // 1. Игнорируем служебный мусор от переключения режимов E22
       if (payload.length() == 3 && (uint8_t)payload[0] == 0xC1) {
         return;
       }
 
+      // 2. ФИЛЬТР ДУБЛИКАТОВ: Игнорируем тот же самый пакет, если прошло меньше 2 секунд
+      if (payload == lastPayload && (millis() - lastTxTime < 2000)) {
+        Serial.println(F("[ANTI-ECHO] Заблокирован повторный пакет (эхо)"));
+        return;
+      }
+
       Serial.println(F("\n----------------------------------------------"));
-      Serial.printf("[RX REPEATER] Перехвачен пакет (%d байт) | RSSI: %d dBm\r\n", 
+      Serial.printf("[RX REPEATER] Принят пакет (%d байт) | RSSI: %d dBm\r\n", 
                     payload.length(), rssi);
 
-      // Дамп данных
-      Serial.print(F("[DATA HEX]: "));
-      printHexBuffer((const uint8_t*)payload.c_str(), payload.length());
-      
       Serial.print(F("[DATA ASCII]: "));
       Serial.println(payload);
 
-      // --- ПЕРЕДАЧА ---
-      // 1. Быстро переключаем NETID модуля на сеть Приёмника (0x10)
+      // Запоминаем текущий пакет и время
+      lastPayload = payload;
+      lastTxTime = millis();
+
+      // 3. ПЕРЕДАЧА
       setNetIDFast(DST_NETID);
 
-      Serial.printf("[TX REPEATER] Переизлучение кадра в NETID 0x%02X...\r\n", DST_NETID);
-
-      // 2. Отправляем исходные байты кадра как есть (прозрачный режим)
+      Serial.printf("[TX REPEATER] Переизлучение в NETID 0x%02X...\r\n", DST_NETID);
       ResponseStatus rs = e22.sendMessage(payload);
 
       if (rs.code == 1) {
-        Serial.println(F("[TX SUCCESS] Пакет переизлучен!"));
+        Serial.println(F("[TX SUCCESS] Пакет успешно передан!"));
       } else {
-        Serial.print(F("[TX ERROR] Ошибка передачи: "));
+        Serial.print(F("[TX ERROR]: "));
         Serial.println(rs.getResponseDescription());
       }
 
-      // 3. Возвращаем NETID на сеть Передатчика (0x02)
+      // 4. Очистка после передачи (пауза, чтобы дать пакету улететь в эфир)
+      delay(300); 
+
+      // Возвращаем NETID обратно для приема от TX
       setNetIDFast(SRC_NETID);
+
+      // Очищаем буфер от остатков собственного перехваченного сигнала
+      while (LoRaSerial.available()) {
+        LoRaSerial.read();
+      }
 
       Serial.println(F("----------------------------------------------"));
     }
   }
 }
 
-// Быстрая смена NETID напрямую без чтения конфигурации по UART
 void setNetIDFast(uint8_t netId) {
-  // Переводим модуль в режим настройки (M0=1, M1=1)
   digitalWrite(LORA_M0_PIN, HIGH);
   digitalWrite(LORA_M1_PIN, HIGH);
-  delay(20);
+  delay(15);
 
-  // Прямая запись регистра NETID (Адрес регистра NETID в E22 = 0x02)
-  // Команда 0xC2 — запись регистров без сохранения в Flash
   uint8_t setNetIdCmd[] = {0xC2, 0x02, 0x01, netId};
   LoRaSerial.write(setNetIdCmd, sizeof(setNetIdCmd));
   LoRaSerial.flush();
-  delay(20);
+  delay(15);
 
-  // Очищаем служебный ответ модуля (C1 ...), чтобы он не попал в поток данных
   while (LoRaSerial.available()) {
     LoRaSerial.read();
   }
 
-  // Возвращаем режим NORMAL (M0=0, M1=0)
   digitalWrite(LORA_M0_PIN, LOW);
   digitalWrite(LORA_M1_PIN, LOW);
-  delay(20);
+  delay(15);
 }
 
 bool configureSoftRepeater() {
-  Serial.println(F("[CFG] Настройка E22..."));
-  
   ResponseStructContainer c = e22.getConfiguration();
   if (c.status.code != 1) {
     c.close();
@@ -128,33 +131,19 @@ bool configureSoftRepeater() {
   Configuration cfg = *(Configuration*) c.data;
   c.close();
 
-  // 1. Отключаем внутренний репитер
   cfg.TRANSMISSION_MODE.enableRepeater = REPEATER_DISABLED;
-
-  // 2. Прозрачный режим (Transparent): ретранслятор пробрасывает кадр "как есть"
   cfg.TRANSMISSION_MODE.fixedTransmission = FT_TRANSPARENT_TRANSMISSION;
-
-  // 3. Мощность 10 dBm
   cfg.OPTION.transmissionPower = POWER_10;
-
-  // 4. Включаем RSSI
   cfg.TRANSMISSION_MODE.enableRSSI = RSSI_ENABLED;
 
-  // 5. Адрес широковещательного приёма
   cfg.ADDH = 0xFF;
   cfg.ADDL = 0xFF;
-
-  // 6. Исходный NETID передатчика и канал
   cfg.NETID = SRC_NETID;
   cfg.CHAN = LORA_CHANNEL;
 
   ResponseStatus rs = e22.setConfiguration(cfg, WRITE_CFG_PWR_DWN_SAVE);
   
-  if (rs.code == 1) {
-    Serial.println(F("[CFG OK] Настройка записана."));
-  } else {
-    return false;
-  }
+  if (rs.code != 1) return false;
   
   e22.setMode(MODE_0_NORMAL);
   delay(100);
@@ -164,13 +153,4 @@ bool configureSoftRepeater() {
   }
 
   return true;
-}
-
-void printHexBuffer(const uint8_t* buffer, uint16_t size) {
-  for (uint16_t i = 0; i < size; i++) {
-    if (buffer[i] < 0x10) Serial.print("0");
-    Serial.print(buffer[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
 }
