@@ -31,7 +31,7 @@ void setup() {
   delay(1000);
 
   Serial.println(F("\n=============================================="));
-  Serial.println(F("  ESP32-S3 LoRa Software Repeater (No-Echo)   "));
+  Serial.println(F("  ESP32-S3 LoRa Software Repeater"));
   Serial.println(F("=============================================="));
 
   // Явно настраиваем пин AUX на вход для аппаратного контроля
@@ -88,7 +88,7 @@ void loop() {
       // Приёмник включается только тогда, когда в эфире уже нет собственного сигнала
       setNetIDFast(SRC_NETID);
 
-      Serial.println(F("[TX SUCCESS] Пакет передан. Эхо физически исключено!"));
+      Serial.println(F("[TX SUCCESS] Пакет передан."));
       Serial.println(F("----------------------------------------------"));
     }
   }
