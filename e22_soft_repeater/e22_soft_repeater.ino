@@ -1,42 +1,39 @@
 /* Программный (software) LoRa-репитер на ESP32-S3-N16R8 + Ebyte E22-900T22D
  *
- * В отличие от аппаратного режима репитера модуля (REG3.enableRepeater,
- * при котором ADDH/ADDL превращаются в пару "исходная сеть / целевая сеть"),
- * здесь ретрансляция делается программно самим микроконтроллером:
+ * ЛОГИКА РАБОТЫ:
  *   1) модуль работает как обычный узел с фиксированной адресацией
- *      (fixedTransmission) и СВОИМ собственным адресом ADDH/ADDL;
- *   2) когда репитер принимает пакет, адресованный ему, он читает payload
- *      и RSSI, выводит их в Serial (Arduino IDE Monitor);
- *   3) затем репитер немедленно пересылает тот же payload дальше —
- *      отправляет его фиксированным сообщением на адрес конечного
- *      приёмника (см. e22_rx_via_repeater.ino) — и тоже логирует отправку.
+ *      (fixedTransmission) и своим адресом ADDH/ADDL (00:02);
+ *   2) приняв пакет от передатчика, репитер выводит payload и RSSI в
+ *      Serial, включает зелёный RGB на 1 секунду и пересылает payload
+ *      на адрес конечного приёмника (00:03), снова выводя результат
+ *      отправки в Serial.
  *
- * Поэтому все три узла (передатчик, репитер, приёмник) должны быть
- * НАСТРОЕНЫ В ОДНОЙ И ТОЙ ЖЕ СЕТИ NETID — здесь она больше не используется
- * модулем как "маршрут" (это было нужно только для аппаратного режима
- * репитера), а просто идентифицирует общую логическую сеть проекта.
- * Маршрутизация "кто кому пересылает" теперь целиком на стороне скетча
- * (константы REPEATER_ADDH/ADDL — "я", DEST_ADDH/ADDL — "куда пересылать").
+ * Индикация: встроенный адресуемый RGB LED (WS2812, GPIO48 - см. ESP32-S3-N16R8
+ * User Guide) вспыхивает приглушённым зелёным на 1 секунду при каждой
+ * отправке пакета репитером. На некоторых платах для работы этого
+ * светодиода нужно запаять соответствующие площадки/перемычку.
+ * Библиотека: "Adafruit NeoPixel" (Library Manager).
+ *
+ * Все три узла (передатчик, репитер, приёмник) должны быть в ОДНОЙ СЕТИ
+ * NETID - здесь она не используется модулем как "маршрут" (это нужно
+ * только для аппаратного режима репитера REG3.enableRepeater, который
+ * здесь намеренно ВЫКЛЮЧЕН), а просто объединяет узлы одного проекта.
  *
  * Плата: ESP32-S3-N16R8 (см. ESP32-S3-N16R8_User_Guide.pdf)
  * ВАЖНО: Tools -> USB CDC On Boot -> Disabled (иначе Serial.print() будет
- * молча пропадать — см. комментарий в e22_read_config.ino).
+ * молча пропадать - см. комментарий в e22_read_config.ino).
  *
- * Подключение (совпадает с e22_read_config.ino):
- *   E22-900T22D      ESP32-S3-N16R8
- *   VCC       ->     3V3 (отдельный LDO 3.3В + конденсатор 100-470 мкФ
- *                     у самого модуля рекомендуется из-за пикового тока TX)
- *   GND       ->     GND
- *   TXD       ->     GPIO17 (RX для ESP32)
- *   RXD       ->     GPIO18 (TX для ESP32)
- *   AUX       ->     GPIO16
- *   M0        ->     GPIO5
- *   M1        ->     GPIO6
+ * Подключение E22 (совпадает с e22_read_config.ino):
+ *   TXD -> GPIO17 (RX для ESP32), RXD -> GPIO18 (TX для ESP32),
+ *   AUX -> GPIO16, M0 -> GPIO5, M1 -> GPIO6, VCC -> 3V3, GND -> GND
+ *   (рекомендуется отдельный LDO 3.3В + конденсатор 100-470 мкФ у модуля
+ *   из-за пикового тока TX до ~120 мА)
  *
- * Библиотека: "LoRa_E22" (Renzo Mischianti, EByte_LoRa_E22)
+ * Библиотека радио: "LoRa_E22" (Renzo Mischianti, EByte_LoRa_E22)
  */
 
 #include "LoRa_E22.h"
+#include <Adafruit_NeoPixel.h>
 
 // ---------- Пины управления модулем (ESP32-S3-N16R8) ----------
 #define PIN_AUX   16
@@ -46,6 +43,29 @@
 #define PIN_TXD1  18   // ESP32 TX -> E22 RXD
 
 LoRa_E22 e22(&Serial1, PIN_AUX, PIN_M0, PIN_M1, UART_BPS_RATE_9600);
+
+// ---------- Встроенный адресуемый RGB LED (WS2812) ----------
+#define LED_PIN    48
+#define LED_COUNT  1
+Adafruit_NeoPixel pixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+uint32_t ledOffAt = 0;
+bool ledOn = false;
+
+void ledFlashGreen() {
+  pixel.setPixelColor(0, pixel.Color(0, 60, 0)); // приглушенный зелёный
+  pixel.show();
+  ledOn = true;
+  ledOffAt = millis() + 1000;
+}
+
+void ledUpdate() {
+  if (ledOn && (int32_t)(millis() - ledOffAt) >= 0) {
+    pixel.setPixelColor(0, 0);
+    pixel.show();
+    ledOn = false;
+  }
+}
 
 // ---------- Собственный адрес репитера ("куда шлёт передатчик") ----------
 #define REPEATER_ADDH  0x00
@@ -87,11 +107,10 @@ bool configureE22() {
   configuration.OPTION.RSSIAmbientNoise = RSSI_AMBIENT_NOISE_ENABLED;
 
   configuration.TRANSMISSION_MODE.fixedTransmission = FT_FIXED_TRANSMISSION;
-  // LBT обязателен по требованиям ГКРЧ для поддиапазона 868.7-869.2 МГц,
-  // распространяется как на исходный TX, так и на ретрансляцию репитером
+  // LBT обязателен по требованиям ГКРЧ для поддиапазона 868.7-869.2 МГц
   configuration.TRANSMISSION_MODE.enableLBT  = LBT_ENABLED;
   configuration.TRANSMISSION_MODE.enableRSSI = RSSI_ENABLED;
-  // Аппаратный режим репитера НЕ используем — репитер программный
+  // Аппаратный режим репитера НЕ используем - репитер программный
   configuration.TRANSMISSION_MODE.enableRepeater = REPEATER_DISABLED;
 
   ResponseStatus rs = e22.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
@@ -102,6 +121,11 @@ bool configureE22() {
 void setup() {
   Serial.begin(115200);
   delay(500);
+
+  pixel.begin();
+  pixel.setBrightness(80);
+  pixel.clear();
+  pixel.show();
 
   Serial.println();
   Serial.println(F("=== Программный LoRa-репитер (ESP32-S3-N16R8) ==="));
@@ -120,6 +144,8 @@ void setup() {
 }
 
 void loop() {
+  ledUpdate();
+
   if (e22.available() > 1) {
     ResponseContainer rc = e22.receiveMessageRSSI();
 
@@ -136,7 +162,9 @@ void loop() {
     Serial.printf("[%lu] RX <- \"%s\" (RSSI %d dBm)\r\n",
                   (unsigned long)rxCount, payload.c_str(), rssi);
 
-    // Ретрансляция: пересылаем тот же payload конечному приёмнику
+    // Индикация отправки - вспышка зелёным на 1 секунду
+    ledFlashGreen();
+
     ResponseStatus rs = e22.sendFixedMessage(DEST_ADDH, DEST_ADDL, LORA_CHANNEL, payload);
 
     if (rs.code == 1) {
